@@ -25,3 +25,17 @@ GET your_index/_search
     }
   }
 }
+
+
+
+
+import java.time.ZonedDateTime;
+                import java.time.format.DateTimeFormatter;
+                import java.time.temporal.ChronoUnit;
+
+                String dateString = params._source.subscriptionDetails.endDate;
+                DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
+                ZonedDateTime expiryDate = ZonedDateTime.parse(dateString, formatter);
+                ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS);
+
+                return ChronoUnit.DAYS.between(now, expiryDate) == 3;
