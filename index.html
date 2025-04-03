@@ -2,3 +2,26 @@
     <h3>Welcome to website</h3>
     <a href="">Login or Register</a>
 </body>
+
+GET your_index/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "term": { "type": "Tenant" } },
+        {
+          "script": {
+            "script": {
+              "source": """
+                ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+                ZonedDateTime expiryDate = ZonedDateTime.parse(doc['subscriptionDetails.endDate'].value);
+                return ChronoUnit.DAYS.between(now, expiryDate) == 3;
+              """,
+              "lang": "painless"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
