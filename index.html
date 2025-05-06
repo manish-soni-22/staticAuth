@@ -1,41 +1,183 @@
-<body>
-    <h3>Welcome to website</h3>
-    <a href="">Login or Register</a>
-</body>
+🧠 Understanding the Challenge
+Most AWS services (e.g., Lambda, DynamoDB, S3) don’t natively track per-tenant usage when resources are shared. So:
+•	AWS Billing tracks costs per resource, not per tenant
+•	You need to track usage per tenant, then map usage to cost
+________________________________________
+✅ Step-by-Step Plan to Calculate Cost Tenant-Wise
+Step 1: Tag Resources with Common Tags
+Tag shared resources with a global tag like:
+json
+CopyEdit
+{ "Application": "MyIoTPlatform" }
+This allows CUR filtering later.
+You won't tag per tenant since resources are shared, but the tag helps you isolate app-level costs.
+________________________________________
+Step 2: Track Usage Per Tenant
+Build or enhance your application to track usage per tenant:
+Service	What to Track per Tenant	Where to Store
+IoT Core	Messages sent, topic invocations	DynamoDB, InfluxDB
+Lambda	Invocations per tenant (log tenantId)	CloudWatch Logs → Metric Filters or DynamoDB
+S3	Data uploaded/downloaded	Use signed URLs or tag metadata with tenantId
+OpenSearch	Query count or index usage	Custom wrapper logic
+Maintain a tenant_usage table to log this data hourly/daily.
+________________________________________
+Step 3: Estimate Cost Per Service
+Use AWS pricing to estimate cost per service for each tenant.
+Examples:
+Lambda:
+text
+CopyEdit
+$0.20 per 1M requests + $0.00001667 per GB-s
+Track: number of invocations, duration, memory
+DynamoDB:
+text
+CopyEdit
+$ per read/write unit or storage
+Track: per-tenant RCU/WCU or item count
+S3:
+text
+CopyEdit
+$ per GB stored, $ per GB retrieved
+Track: file sizes and operations per tenant
+________________________________________
+Step 4: Map Usage to Cost
+Write a periodic job (Lambda or ECS task) to:
+1.	Read usage data per tenant
+2.	Apply AWS pricing formulas
+3.	Store results in a tenant_billing table
+________________________________________
+Step 5: Reporting Dashboard
+Use Amazon QuickSight, Grafana, or a simple frontend to:
+•	Show tenant-wise breakdown
+•	Compare monthly costs
+•	Highlight high-usage tenants
+________________________________________
+🧮 Optional Enhancements
+•	Integrate AWS CUR (Cost & Usage Report) into Athena for overall costs
+•	Use Lambda Power Tuning to optimize functions and reduce costs
+•	Apply rate limiting or quotas per tenant to control cost
+________________________________________
+Summary
+Component	Action
+Shared Resources	Tag globally (e.g., Application: IoTApp)
+Per-Tenant Usage	Track in DynamoDB or logs
+Cost Mapping	Apply AWS pricing formulas
+Reporting	Build internal cost dashboard
 
-GET your_index/_search
+
+Here's a sample setup to help you track per-tenant usage and calculate estimated AWS cost using DynamoDB and Lambda.
+________________________________________
+🧱 1. DynamoDB Table: TenantUsage
+Schema:
+Partition Key (PK)	Sort Key (SK)	Attributes
+TENANT#<tenantId>	USAGE#<timestamp>	lambdaInvocations, dataSentMB, etc.
+Example Record:
+json
+CopyEdit
 {
-  "query": {
-    "bool": {
-      "must": [
-        { "term": { "type": "Tenant" } },
-        {
-          "script": {
-            "script": {
-              "source": """
-                ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
-                ZonedDateTime expiryDate = ZonedDateTime.parse(doc['subscriptionDetails.endDate'].value);
-                return ChronoUnit.DAYS.between(now, expiryDate) == 3;
-              """,
-              "lang": "painless"
-            }
-          }
-        }
-      ]
-    }
-  }
+  "PK": "TENANT#tenant123",
+  "SK": "USAGE#2025-05-02T00:00",
+  "lambdaInvocations": 1500,
+  "lambdaDurationMs": 800000,
+  "s3DataStoredMB": 120,
+  "s3DownloadsMB": 45
 }
+You can record these hourly or daily using a cron Lambda.
+________________________________________
+⚙️ 2. Lambda Tracker Example
+Modify your Lambda to log per-tenant usage:
+js
+CopyEdit
+const AWS = require('aws-sdk');
+const ddb = new AWS.DynamoDB.DocumentClient();
+
+exports.handler = async (event) => {
+  const tenantId = event.tenantId;
+  const now = new Date().toISOString().slice(0, 13); // hourly bucket
+
+  const params = {
+    TableName: 'TenantUsage',
+    Key: {
+      PK: `TENANT#${tenantId}`,
+      SK: `USAGE#${now}`
+    },
+    UpdateExpression: `ADD lambdaInvocations :inc, lambdaDurationMs :dur`,
+    ExpressionAttributeValues: {
+      ":inc": 1,
+      ":dur": event.lambdaDurationMs || 100 // optional duration
+    }
+  };
+
+  await ddb.update(params).promise();
+};
+You'd do similarly for tracking S3 uploads or API hits.
+________________________________________
+💰 3. Billing Calculation Function
+Periodically run a job (daily or monthly) to fetch data and compute costs.
+Example:
+js
+CopyEdit
+const lambdaCostPerMillion = 0.20;
+const lambdaCostPerGBSec = 0.00001667;
+
+function calculateLambdaCost(invocations, durationMs) {
+  const invocationCost = (invocations / 1_000_000) * lambdaCostPerMillion;
+  const durationSec = durationMs / 1000;
+  const computeGBSec = durationSec * 0.128; // for 128 MB functions
+  const computeCost = computeGBSec * lambdaCostPerGBSec;
+  return +(invocationCost + computeCost).toFixed(4);
+}
+You can loop over tenants, calculate total cost, and write into another table or report.
+________________________________________
+📊 4. Optional TenantBilling Table:
+PK (TENANT#<id>)	SK (BILLING#<month>)	EstimatedCost
+TENANT#abc	BILLING#2025-04	$12.45
 
 
+*********************************************************************************
+🔁 Step 1: Track and Store Usage Per Tenant
+🎯 Goal: Log usage metrics every time a tenant uses a service.
+✅ What to Track (Examples):
+AWS Service	Metric to Track	How to Identify Tenant
+Lambda	Invocations, duration	tenantId in payload or context
+S3	Upload/download size	Prefix naming (s3://bucket/tenant123/)
+API Gateway	Request count	Cognito identity or token claims
+IoT Core	Messages per tenant	Topic naming pattern (myIoT/thing/<tenantId>/...)
+________________________________________
+🧠 Implementation
+1.	Modify your Lambda Functions (all entry points) to log usage.
+2.	Each function should:
+o	Extract tenantId from input (Cognito token, topic name, payload, etc.)
+o	Log usage to DynamoDB using the schema described:
+	PK: TENANT#<tenantId>
+	SK: USAGE#<hour> or USAGE#<day>
+o	Use DynamoDB UpdateExpression to increment usage counters.
+📅 Frequency:
+•	Realtime: Every Lambda/API invocation updates usage counts.
+•	Batch logs (optional): You can also collect CloudWatch logs and use a scheduled Lambda to aggregate usage from logs hourly.
+________________________________________
+💰 Step 2: Calculate Cost Per Tenant
+🎯 Goal: Convert usage metrics into estimated AWS cost.
+🧠 Implementation:
+1.	Scheduled Lambda Function runs daily or monthly.
+2.	It reads usage logs from TenantUsage table (Step 1), aggregates them.
+3.	Applies AWS pricing formulas for each service:
+o	Example:
+	Lambda: per million requests + per GB-second
+	S3: per GB stored + transfer cost
+4.	Writes summarized cost to a TenantBilling table (for reporting).
+📅 Frequency:
+•	Daily summary (recommended)
+•	Monthly invoice generation
+________________________________________
+🔄 Lifecycle & Triggers Summary
+When	Action
+During Lambda/API execution	Call updateTenantUsage(tenantId, metrics)
+Every day (cron)	Call calculateDailyTenantCost() Lambda
+Every month	Call generateTenantBillingReport() (optional)
+________________________________________
+🛡️ Optional Best Practices
+•	Use CloudWatch Logs Insights for verifying usage per tenant.
+•	Encrypt tenant data at rest using KMS if required.
+•	Use CloudTrail or Athena for audit/compliance if needed.
 
-
-import java.time.ZonedDateTime;
-                import java.time.format.DateTimeFormatter;
-                import java.time.temporal.ChronoUnit;
-
-                String dateString = params._source.subscriptionDetails.endDate;
-                DateTimeFormatter formatter = DateTimeFormatter.ISO_INSTANT;
-                ZonedDateTime expiryDate = ZonedDateTime.parse(dateString, formatter);
-                ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS);
-
-                return ChronoUnit.DAYS.between(now, expiryDate) == 3;
