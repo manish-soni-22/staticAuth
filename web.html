@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AWS Cognito Login</title>
+  <!-- Load Amazon Cognito Identity SDK from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.2.2/dist/amazon-cognito-identity.min.js"></script>
+</head>
+<body>
+  <h2>Login</h2>
+  <form id="loginForm">
+    <input type="email" id="email" placeholder="Email" required><br>
+    <input type="password" id="password" placeholder="Password" required><br>
+    <button type="submit">Login</button>
+  </form>
+
+  <pre id="output"></pre>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      const poolData = {
+        UserPoolId: "us-east-1_XXXXXXX",     // 🔁 Replace with your Cognito User Pool ID
+        ClientId: "XXXXXXXXXXXXXXX"          // 🔁 Replace with your App Client ID (no secret)
+      };
+
+      const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+
+      const userData = {
+        Username: email,
+        Pool: userPool
+      };
+
+      const authenticationData = {
+        Username: email,
+        Password: password
+      };
+
+      const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+      const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
+
+      cognitoUser.authenticateUser(authenticationDetails, {
+        onSuccess: function (result) {
+          const idToken = result.getIdToken().getJwtToken();
+          const accessToken = result.getAccessToken().getJwtToken();
+          const refreshToken = result.getRefreshToken().getToken();
+
+          document.getElementById('output').textContent =
+            "Login successful!\n\n" +
+            "ID Token:\n" + idToken + "\n\n" +
+            "Access Token:\n" + accessToken + "\n\n" +
+            "Refresh Token:\n" + refreshToken;
+        },
+
+        onFailure: function (err) {
+          document.getElementById('output').textContent = "Authentication failed: " + err.message;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
