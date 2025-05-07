@@ -1,183 +1,160 @@
-🧠 Understanding the Challenge
-Most AWS services (e.g., Lambda, DynamoDB, S3) don’t natively track per-tenant usage when resources are shared. So:
-•	AWS Billing tracks costs per resource, not per tenant
-•	You need to track usage per tenant, then map usage to cost
-________________________________________
-✅ Step-by-Step Plan to Calculate Cost Tenant-Wise
-Step 1: Tag Resources with Common Tags
-Tag shared resources with a global tag like:
-json
-CopyEdit
-{ "Application": "MyIoTPlatform" }
-This allows CUR filtering later.
-You won't tag per tenant since resources are shared, but the tag helps you isolate app-level costs.
-________________________________________
-Step 2: Track Usage Per Tenant
-Build or enhance your application to track usage per tenant:
-Service	What to Track per Tenant	Where to Store
-IoT Core	Messages sent, topic invocations	DynamoDB, InfluxDB
-Lambda	Invocations per tenant (log tenantId)	CloudWatch Logs → Metric Filters or DynamoDB
-S3	Data uploaded/downloaded	Use signed URLs or tag metadata with tenantId
-OpenSearch	Query count or index usage	Custom wrapper logic
-Maintain a tenant_usage table to log this data hourly/daily.
-________________________________________
-Step 3: Estimate Cost Per Service
-Use AWS pricing to estimate cost per service for each tenant.
-Examples:
-Lambda:
-text
-CopyEdit
-$0.20 per 1M requests + $0.00001667 per GB-s
-Track: number of invocations, duration, memory
-DynamoDB:
-text
-CopyEdit
-$ per read/write unit or storage
-Track: per-tenant RCU/WCU or item count
-S3:
-text
-CopyEdit
-$ per GB stored, $ per GB retrieved
-Track: file sizes and operations per tenant
-________________________________________
-Step 4: Map Usage to Cost
-Write a periodic job (Lambda or ECS task) to:
-1.	Read usage data per tenant
-2.	Apply AWS pricing formulas
-3.	Store results in a tenant_billing table
-________________________________________
-Step 5: Reporting Dashboard
-Use Amazon QuickSight, Grafana, or a simple frontend to:
-•	Show tenant-wise breakdown
-•	Compare monthly costs
-•	Highlight high-usage tenants
-________________________________________
-🧮 Optional Enhancements
-•	Integrate AWS CUR (Cost & Usage Report) into Athena for overall costs
-•	Use Lambda Power Tuning to optimize functions and reduce costs
-•	Apply rate limiting or quotas per tenant to control cost
-________________________________________
-Summary
-Component	Action
-Shared Resources	Tag globally (e.g., Application: IoTApp)
-Per-Tenant Usage	Track in DynamoDB or logs
-Cost Mapping	Apply AWS pricing formulas
-Reporting	Build internal cost dashboard
+✅ Step 1: Create a Cognito User Pool
+Go to the Amazon Cognito Console → https://console.aws.amazon.com/cognito
 
+Click “Create user pool”
 
-Here's a sample setup to help you track per-tenant usage and calculate estimated AWS cost using DynamoDB and Lambda.
-________________________________________
-🧱 1. DynamoDB Table: TenantUsage
-Schema:
-Partition Key (PK)	Sort Key (SK)	Attributes
-TENANT#<tenantId>	USAGE#<timestamp>	lambdaInvocations, dataSentMB, etc.
-Example Record:
-json
-CopyEdit
-{
-  "PK": "TENANT#tenant123",
-  "SK": "USAGE#2025-05-02T00:00",
-  "lambdaInvocations": 1500,
-  "lambdaDurationMs": 800000,
-  "s3DataStoredMB": 120,
-  "s3DownloadsMB": 45
-}
-You can record these hourly or daily using a cron Lambda.
-________________________________________
-⚙️ 2. Lambda Tracker Example
-Modify your Lambda to log per-tenant usage:
+Choose “Users” → Click “Next”
+
+Name your pool (e.g., MyAppUserPool)
+
+In Attributes, enable:
+
+Email (required for web apps)
+
+Optionally, add custom attributes like tenantId
+
+Choose Email or Phone for user sign-in options
+
+Configure Password policy and MFA if needed
+
+In Message Customizations, define welcome email content
+
+Skip advanced settings or set them as required
+
+Click Create user pool
+
+✅ Step 2: Create an App Client
+Go to your newly created User Pool
+
+Under App Integration → App clients and analytics, click “Create app client”
+
+Name: myWebAppClient
+
+Enable:
+
+Generate client secret → ❌ (must be off for web apps)
+
+Enable username/password auth (SRP)
+
+Enable user SRP and custom auth flows
+
+Save the client and note down:
+
+App Client ID
+
+✅ Step 3: Configure Domain for Hosted UI (optional, but helpful for quick login)
+Under App Integration → Domain name
+
+Choose a domain prefix (e.g., my-app-auth)
+
+Save domain
+
+You’ll get a hosted UI link like:
+https://my-app-auth.auth.region.amazoncognito.com/login
+
+✅ Step 4: Add Callback/Logout URLs
+Go to App Integration → App client settings
+
+Select the app client you created
+
+Enable Authorization code grant and Implicit grant
+
+Set the callback URL to your web app: e.g., https://myapp.com/callback
+
+Set the logout URL to: https://myapp.com/logout
+
+Choose OAuth Scopes:
+
+email
+
+openid
+
+profile
+
+Save changes
+
+✅ Step 5: Integrate Cognito in Web App
+Use Amazon Cognito Auth SDK or Amplify.
+
+Example using Amazon Cognito Identity JS SDK:
 js
-CopyEdit
-const AWS = require('aws-sdk');
-const ddb = new AWS.DynamoDB.DocumentClient();
+Copy
+Edit
+import { CognitoUserPool, AuthenticationDetails, CognitoUser } from "amazon-cognito-identity-js";
 
-exports.handler = async (event) => {
-  const tenantId = event.tenantId;
-  const now = new Date().toISOString().slice(0, 13); // hourly bucket
-
-  const params = {
-    TableName: 'TenantUsage',
-    Key: {
-      PK: `TENANT#${tenantId}`,
-      SK: `USAGE#${now}`
-    },
-    UpdateExpression: `ADD lambdaInvocations :inc, lambdaDurationMs :dur`,
-    ExpressionAttributeValues: {
-      ":inc": 1,
-      ":dur": event.lambdaDurationMs || 100 // optional duration
-    }
-  };
-
-  await ddb.update(params).promise();
+const poolData = {
+  UserPoolId: "us-east-1_XXXXXXX",     // Your user pool ID
+  ClientId: "XXXXXXXXXXXXXXX"          // Your app client ID
 };
-You'd do similarly for tracking S3 uploads or API hits.
-________________________________________
-💰 3. Billing Calculation Function
-Periodically run a job (daily or monthly) to fetch data and compute costs.
-Example:
+
+const userPool = new CognitoUserPool(poolData);
+
+const authenticationDetails = new AuthenticationDetails({
+  Username: "user@example.com",
+  Password: "UserPassword123"
+});
+
+const user = new CognitoUser({
+  Username: "user@example.com",
+  Pool: userPool
+});
+
+user.authenticateUser(authenticationDetails, {
+  onSuccess: (result) => {
+    const idToken = result.getIdToken().getJwtToken();
+    console.log("JWT Token:", idToken);
+    // Send JWT to API Gateway
+  },
+  onFailure: (err) => {
+    console.error("Auth error:", err);
+  }
+});
+✅ Step 6: Protect API Gateway Using Cognito Authorizer
+Go to API Gateway → your REST or HTTP API
+
+In Authorizers, click “Create Authorizer”
+
+Choose Cognito
+
+Enter:
+
+Name: CognitoAuth
+
+Cognito user pool: select your pool
+
+Token source: Authorization header
+
+Save
+
+✅ Step 7: Attach Authorizer to API Gateway Methods
+Go to your API → Resources
+
+Choose a method (e.g., GET /device)
+
+Click on Method Request
+
+Set Authorization to your Cognito authorizer
+
+Deploy the API
+
+✅ Step 8: Call API from Web App Using JWT Token
+In your frontend, after login:
+
 js
-CopyEdit
-const lambdaCostPerMillion = 0.20;
-const lambdaCostPerGBSec = 0.00001667;
+Copy
+Edit
+fetch("https://api-id.execute-api.region.amazonaws.com/prod/devices", {
+  headers: {
+    Authorization: idToken // JWT from Cognito
+  }
+})
+.then(res => res.json())
+.then(data => console.log(data));
+🔄 Optional: Use Custom Claims for tenantId
+Add a tenantId custom attribute during user sign-up.
 
-function calculateLambdaCost(invocations, durationMs) {
-  const invocationCost = (invocations / 1_000_000) * lambdaCostPerMillion;
-  const durationSec = durationMs / 1000;
-  const computeGBSec = durationSec * 0.128; // for 128 MB functions
-  const computeCost = computeGBSec * lambdaCostPerGBSec;
-  return +(invocationCost + computeCost).toFixed(4);
-}
-You can loop over tenants, calculate total cost, and write into another table or report.
-________________________________________
-📊 4. Optional TenantBilling Table:
-PK (TENANT#<id>)	SK (BILLING#<month>)	EstimatedCost
-TENANT#abc	BILLING#2025-04	$12.45
+Use a Pre Token Generation Lambda to include this in JWT custom claims.
 
+Extract it in Lambda or use it in IAM policies.
 
-*********************************************************************************
-🔁 Step 1: Track and Store Usage Per Tenant
-🎯 Goal: Log usage metrics every time a tenant uses a service.
-✅ What to Track (Examples):
-AWS Service	Metric to Track	How to Identify Tenant
-Lambda	Invocations, duration	tenantId in payload or context
-S3	Upload/download size	Prefix naming (s3://bucket/tenant123/)
-API Gateway	Request count	Cognito identity or token claims
-IoT Core	Messages per tenant	Topic naming pattern (myIoT/thing/<tenantId>/...)
-________________________________________
-🧠 Implementation
-1.	Modify your Lambda Functions (all entry points) to log usage.
-2.	Each function should:
-o	Extract tenantId from input (Cognito token, topic name, payload, etc.)
-o	Log usage to DynamoDB using the schema described:
-	PK: TENANT#<tenantId>
-	SK: USAGE#<hour> or USAGE#<day>
-o	Use DynamoDB UpdateExpression to increment usage counters.
-📅 Frequency:
-•	Realtime: Every Lambda/API invocation updates usage counts.
-•	Batch logs (optional): You can also collect CloudWatch logs and use a scheduled Lambda to aggregate usage from logs hourly.
-________________________________________
-💰 Step 2: Calculate Cost Per Tenant
-🎯 Goal: Convert usage metrics into estimated AWS cost.
-🧠 Implementation:
-1.	Scheduled Lambda Function runs daily or monthly.
-2.	It reads usage logs from TenantUsage table (Step 1), aggregates them.
-3.	Applies AWS pricing formulas for each service:
-o	Example:
-	Lambda: per million requests + per GB-second
-	S3: per GB stored + transfer cost
-4.	Writes summarized cost to a TenantBilling table (for reporting).
-📅 Frequency:
-•	Daily summary (recommended)
-•	Monthly invoice generation
-________________________________________
-🔄 Lifecycle & Triggers Summary
-When	Action
-During Lambda/API execution	Call updateTenantUsage(tenantId, metrics)
-Every day (cron)	Call calculateDailyTenantCost() Lambda
-Every month	Call generateTenantBillingReport() (optional)
-________________________________________
-🛡️ Optional Best Practices
-•	Use CloudWatch Logs Insights for verifying usage per tenant.
-•	Encrypt tenant data at rest using KMS if required.
-•	Use CloudTrail or Athena for audit/compliance if needed.
-
+Would you like a sample working web app example or help with configuring the pre-token Lambda for custom claims?
