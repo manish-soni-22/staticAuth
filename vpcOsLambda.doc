@@ -1,0 +1,119 @@
+🧩 Finalized Architecture Overview
+Component	Count	Purpose
+VPC	1	Your private AWS network
+Public Subnet	1	Holds NAT Gateway for internet
+Private Subnets	3	OpenSearch and Lambda (no public IP)
+Internet Gateway	1	Attach to VPC
+NAT Gateway	1	Internet access for private Lambda
+Route Tables	2	Public & Private
+________________________________________
+🔧 Final Manual Steps (Updated for 3 Subnets)
+________________________________________
+✅ Step 1: Create a VPC
+1.	Go to VPC Dashboard → Create VPC
+2.	Choose: "VPC and more"
+3.	Set:
+o	VPC Name: MyVPC
+o	CIDR: 10.0.0.0/16
+4.	✅ Enable DNS resolution and hostnames
+5.	Click Create VPC
+________________________________________
+✅ Step 2: Create 4 Subnets (3 Private, 1 Public)
+Go to Subnets → Create Subnet, choose your VPC, and create:
+Subnet Name	AZ	CIDR Block	Type
+Private-1	us-east-1a	10.0.1.0/24	Private
+Private-2	us-east-1b	10.0.2.0/24	Private
+Private-3	us-east-1c	10.0.3.0/24	Private
+Public-1	us-east-1a	10.0.100.0/24	Public
+You must select different AZs for Private-1, Private-2, and Private-3.
+________________________________________
+✅ Step 3: Create and Attach an Internet Gateway
+1.	Go to Internet Gateways → Create
+o	Name: MyIGW
+2.	Click Attach to VPC → Select MyVPC
+________________________________________
+✅ Step 4: Create a NAT Gateway
+1.	Go to NAT Gateways → Create
+o	Name: MyNAT
+o	Subnet: Public-1
+o	Elastic IP: Allocate new
+2.	Click Create NAT Gateway
+________________________________________
+✅ Step 5: Create Route Tables
+🔹 Public Route Table
+1.	Create Route Table:
+o	Name: Public-RT
+o	VPC: MyVPC
+2.	Edit routes:
+o	0.0.0.0/0 → Internet Gateway
+3.	Associate to:
+o	Public-1
+🔹 Private Route Table
+1.	Create Route Table:
+o	Name: Private-RT
+o	VPC: MyVPC
+2.	Edit routes:
+o	0.0.0.0/0 → NAT Gateway
+3.	Associate with:
+o	Private-1, Private-2, Private-3
+________________________________________
+✅ Step 6: Create Security Groups
+🔹 OpenSearch SG
+1.	Go to Security Groups → Create
+o	Name: OpenSearchSG
+o	Inbound: Allow port 443 from LambdaSG
+o	Outbound: Allow all
+🔹 Lambda SG
+1.	Create another SG:
+o	Name: LambdaSG
+o	Inbound: none
+o	Outbound: Allow all (for internet, S3, etc.)
+________________________________________
+✅ Step 7: Create OpenSearch Domain
+1.	Go to Amazon OpenSearch → Create domain
+2.	Choose:
+o	Deployment type: Development or Production
+o	VPC Access
+o	VPC: MyVPC
+o	Subnets: ✅ Select Private-1, Private-2, Private-3
+o	Security Group: OpenSearchSG
+3.	Access Policy: For testing, you can use:
+json
+CopyEdit
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": "*",
+    "Action": "es:*",
+    "Resource": "arn:aws:es:<region>:<account-id>:domain/my-opensearch-domain/*"
+  }]
+}
+Replace with IAM policy or restricted IPs in production.
+________________________________________
+✅ Step 8: Create Lambda in VPC with Internet Access
+1.	Go to Lambda → Create Function
+2.	Set:
+o	Runtime: Node.js 18.x
+o	VPC: MyVPC
+o	Subnet: Any of Private-1, Private-2, or Private-3
+o	SG: LambdaSG
+3.	Add your OpenSearch client code
+________________________________________
+✅ Step 9: IAM Role for Lambda
+Attach the following permissions:
+•	AWSLambdaBasicExecutionRole
+•	AmazonOpenSearchServiceFullAccess
+•	AmazonDynamoDBReadOnlyAccess
+•	AmazonS3ReadOnlyAccess
+✅ Add more services as needed.
+________________________________________
+🧪 Final Checklist
+Component	✅ Done?
+VPC with 3 private + 1 public subnet	✅
+NAT Gateway and route setup	✅
+OpenSearch in 3 subnets	✅
+Lambda in private subnet (internet via NAT)	✅
+IAM Role for Lambda	✅
+Lambda able to access OpenSearch, internet, S3, DynamoDB	✅
+
