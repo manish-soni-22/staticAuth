@@ -2,3 +2,5 @@ cmake -DCMAKE_BUILD_TYPE=Debug -S . -B build
 cmake --build build
 ./build/myapp.exe
 gdb ./build/myapp.exe
+pacman -Syu   # update all packages first (may take time)
+pacman -S mingw-w64-x86_64-cmake
