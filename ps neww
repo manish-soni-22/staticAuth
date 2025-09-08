@@ -4,3 +4,4 @@ cmake --build build
 gdb ./build/myapp.exe
 pacman -Syu   # update all packages first (may take time)
 pacman -S mingw-w64-x86_64-cmake
+pacman -Sy pacman
