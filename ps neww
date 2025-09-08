@@ -1,22 +1,4 @@
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "CMake Build",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}/build"
-      },
-      "problemMatcher": "$gcc",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
-    }
-  ]
-}
+cmake -DCMAKE_BUILD_TYPE=Debug -S . -B build
+cmake --build build
+./build/myapp.exe
+gdb ./build/myapp.exe
