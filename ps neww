@@ -1,2 +1,3 @@
-pacman -Syu     # update package database (may take time)
-pacman -S mingw-w64-x86_64-cmake
+pacman -Sy
+pacman -S ca-certificates
+pacman -Syu
