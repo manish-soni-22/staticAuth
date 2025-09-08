@@ -1,8 +1,39 @@
-cmake -DCMAKE_BUILD_TYPE=Debug -S . -B build
-cmake --build build
-./build/myapp.exe
-gdb ./build/myapp.exe
-pacman -Syu   # update all packages first (may take time)
-pacman -S mingw-w64-x86_64-cmake
-pacman -Sy pacman
-cmake --build build --target clean
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake Clean",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "build",
+        "--target",
+        "clean"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Rebuild",
+      "dependsOn": ["CMake Clean"],
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    }
+  ]
+}
